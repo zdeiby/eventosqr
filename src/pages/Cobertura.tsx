@@ -27,6 +27,17 @@ interface Evento {
   cupos_totales: number | null;
 }
 
+interface EventoAsistente {
+  id_evento: number;
+  id_usuario: number;
+  estado_caracterizacion: number;
+  fecharegistro: string | null;  // Fecha del registro, puede ser nula
+  usuario: string | null;        // Nombre o ID del usuario, puede ser nulo
+  estado: number | null;         // Estado del registro, puede ser nulo
+  tabla: string | null;          // Nombre de la tabla, puede ser nulo
+}
+
+
 interface Actividad {
   id: number;
   id_evento: number;
@@ -122,6 +133,7 @@ const Cobertura: React.FC = () => {
   const [decodedData, setDecodedData] = useState<any>(null);
   const [scanner, setScanner] = useState<any>(null);
   const [cursosInscritos, setCursosInscritos] = useState<Actividad[]>([]);
+  const [totalAsistentesEstado2, setTotalAsistentesEstado2] =useState<EventoAsistente[]>([]);
 
 
 
@@ -323,6 +335,7 @@ const registrarAsistencia = async () => {
     const syncData = async () => {
       await loadSQL(setDb, fetchEventos);
       await fetchEventos(); 
+      await  contarAsistentesEstado2();
       await fetchActividades();
       await fetchAccesosEvento();
       await fetchAsistentesEvento();
@@ -334,6 +347,7 @@ const registrarAsistencia = async () => {
   useEffect(() => {
     const syncData = async () => {
     await fetchEventos(); 
+    await  contarAsistentesEstado2();
     await fetchActividades();
     await fetchAccesosEvento();
     await fetchAsistentesEvento();
@@ -348,7 +362,7 @@ const registrarAsistencia = async () => {
   const saveDatabase = () => {
     if (db) {
       const data = db.export();
-      localStorage.setItem('sqliteDb', JSON.stringify(Array.from(data)));
+      //localStorage.setItem('sqliteDb', JSON.stringify(Array.from(data)));
       const request = indexedDB.open('myDatabase', 1); // Asegúrate de usar el mismo nombre de base de datos
 
       request.onupgradeneeded = (event) => {
@@ -365,7 +379,7 @@ const registrarAsistencia = async () => {
         const putRequest = store.put(data, 'sqliteDb');
 
         putRequest.onsuccess = () => {
-          console.log('Data saved to IndexedDB');
+        //  console.log('Data saved to IndexedDB');
         };
 
         putRequest.onerror = (event) => {
@@ -393,6 +407,24 @@ const registrarAsistencia = async () => {
     }
   }
 };
+
+
+const contarAsistentesEstado2 = async (database = db) => {
+  if (database) {
+      const res = await database.exec('SELECT * FROM "juventud_eventos_estado_evento" WHERE estado_caracterizacion = 2');
+     if (res[0]?.values && res[0]?.columns) {
+      const transformedAsistentes: EventoAsistente[] = res[0].values.map((row: any[]) => {
+        return res[0].columns.reduce((obj, col, index) => {
+          obj[col] = row[index];
+          return obj;
+        }, {} as EventoAsistente);
+      });
+      setTotalAsistentesEstado2(transformedAsistentes);
+    }
+  }
+};
+
+
 
 const fetchActividades = async (database = db) => {
   if (database) {
@@ -442,16 +474,18 @@ const fetchAsistentesEvento = async (database = db) => {
 
 
   const sincronizacion = async () => {
+  setSincro(true);
+  setPorcentaje(2);
+  closeModal();
+
   await saveDatabase();
   await fetchEventos(); 
   await fetchActividades();
+  await  contarAsistentesEstado2();
   await fetchAccesosEvento();
   await fetchAsistentesEvento();
 
-  setSincro(true);
-  setPorcentaje(0);
-  closeModal();
-
+  
   // 🟩 GUARDAR ASISTENTES
   const guardarAsistentes = async () => {
     const response = await axios.post(
@@ -459,8 +493,8 @@ const fetchAsistentesEvento = async (database = db) => {
       asistentesEvento,
       { headers: { 'Content-Type': 'application/json' } }
     );
-    setPorcentaje(50);
-    console.log('Asistentes enviados:', response.data);
+    setPorcentaje(10);
+   // console.log('Asistentes enviados:', response.data);
   };
 
   if (!(await retryConDecision(guardarAsistentes, 'Error al guardar los asistentes'))) return setSincro(false);
@@ -475,6 +509,7 @@ const fetchAsistentesEvento = async (database = db) => {
     }
     saveDatabase();
     fetchEventos();
+    setPorcentaje(20);
   };
 
   if (!(await retryConDecision(descargarUsuarios, 'Error al descargar usuarios'))) return setSincro(false);
@@ -501,6 +536,7 @@ const fetchAsistentesEvento = async (database = db) => {
     }
     saveDatabase();
     fetchEventos();
+    setPorcentaje(30);
   };
 
   if (!(await retryConDecision(descargarEventos, 'Error al descargar eventos'))) return setSincro(false);
@@ -526,9 +562,87 @@ const fetchAsistentesEvento = async (database = db) => {
     }
     saveDatabase();
     fetchEventos();
+    setPorcentaje(40);
   };
 
   if (!(await retryConDecision(descargarAsistentes, 'Error al descargar asistentes'))) return setSincro(false);
+
+      // 🟩 DESCARGAR JUVENTUD EVENTOS ESTADO EVENTO
+    const descargarJuventudEventosEstadoEvento = async () => {
+      const response = await axios.get('https://secretariadeinclusionsocial.co/appinclusionsocial/index.php/juventud/api_sincro_app/fc_juventud_eventos_general_asistentes');
+      for (const item of response.data) {
+        await db.run(`
+          INSERT OR REPLACE INTO juventud_eventos_estado_evento (
+            id_evento, id_usuario, estado_caracterizacion, fecharegistro,
+            usuario, estado, tabla
+          ) VALUES (?, ?, ?, ?, ?, ?, ?);`, [
+          item.id_evento,
+          item.id_usuario,
+          item.estado_caracterizacion,
+          item.fecharegistro,
+          item.usuario,
+          item.estado,
+          item.tabla
+        ]);
+      }
+      saveDatabase();
+      fetchEventos(); // Puedes modificar esto según necesites, si deseas recargar datos o ejecutar alguna acción
+      setPorcentaje(60);
+    };
+
+      if (!(await retryConDecision(descargarJuventudEventosEstadoEvento, 'Error al descargar asistentes'))) return setSincro(false);
+
+
+      // 🟩 DESCARGAR INCLUSION CIUDADANO
+      const descargarInclusionCiudadano = async () => {
+        try {
+          const response = await axios.get('https://secretariadeinclusionsocial.co/appinclusionsocial/index.php/juventud/api_sincro_app/fc_inclusion_ciudadano');
+          const jsonData = response.data;
+
+          // Dividir los datos en bloques de 100
+          const chunkSize = 100;
+          for (let i = 0; i < jsonData.length; i += chunkSize) {
+            const chunk = jsonData.slice(i, i + chunkSize);
+
+            for (const item of chunk) {
+              await db.run(`
+                INSERT OR REPLACE INTO inclusion_ciudadano (
+                  id_usuario, yearpostulacion, nacionalidad, tipodedocumento, numerodedocumento, nombre1, nombre2,
+                  apellido1, apellido2, fechadenacimiento, sexo, orientacionsexual, identidaddegenero, etnia,
+                  estadocivil, gestantelactante, escolaridad, parentesco, discapacidad, regimendesalud, enfermedades,
+                  actividad, ocupacion, campesino, victima, sisbenizado, fecharegistro, usuario, estado, tabla,
+                  auditiva, mental, fisica, sordoceguera, visual, intelectual, habitanzacalle, correoelectronico,
+                  telcontactouno, telcontactodos, fechadenacimiento_verificada, formulario, numerodedocumento_unico,
+                  es_cuidadora, usuario_creacion, fecha_creacion
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+              `, [
+                item.id_usuario, item.yearpostulacion, item.nacionalidad, item.tipodedocumento, item.numerodedocumento,
+                item.nombre1, item.nombre2, item.apellido1, item.apellido2, item.fechadenacimiento, item.sexo,
+                item.orientacionsexual, item.identidaddegenero, item.etnia, item.estadocivil, item.gestantelactante,
+                item.escolaridad, item.parentesco, item.discapacidad, item.regimendesalud, item.enfermedades,
+                item.actividad, item.ocupacion, item.campesino, item.victima, item.sisbenizado, item.fecharegistro,
+                item.usuario, item.estado, item.tabla, item.auditiva, item.mental, item.fisica, item.sordoceguera,
+                item.visual, item.intelectual, item.habitanzacalle, item.correoelectronico, item.telcontactouno,
+                item.telcontactodos, item.fechadenacimiento_verificada, item.formulario, item.numerodedocumento_unico,
+                item.es_cuidadora, item.usuario_creacion, item.fecha_creacion
+              ]);
+            }
+
+            // Actualiza el progreso según el número de bloques procesados
+            setPorcentaje((i + chunkSize) / jsonData.length * 100);
+          }
+
+          saveDatabase();
+          fetchEventos(); // Similarmente, puedes cargar los datos si es necesario
+          setPorcentaje(100); // Se asegura que el porcentaje llega al 100% al finalizar
+        } catch (err) {
+          console.error('Error al descargar los datos de inclusion_ciudadano:', err);
+        }
+      };
+
+
+      if (!(await retryConDecision(descargarInclusionCiudadano, 'Error al descargar asistentes'))) return setSincro(false);
+
 
   // 🟩 DESCARGAR ACTIVIDADES
   const descargarActividades = async () => {
@@ -662,13 +776,32 @@ const mostrarModalReintento = async (mensaje: string): Promise<boolean> => {
 
 
 
-
+ const uniqueAsistentes = asistentesEvento.filter((value, index, self) => 
+    index === self.findIndex((t) => (
+      t.id_usuario === value.id_usuario && 
+      t.id_evento === value.id_evento && 
+      t.id_actividad === value.id_actividad
+    ))
+  );
 
 const closeModal = () => {
   setShowModal(false);
   if (modalResolve) {
     modalResolve(); // Esto cierra el modal y continúa la ejecución
   }
+};
+
+
+const contarAsistentesEstado2PorEvento = (eventoId: number, totalAsistentesEstado2variable: any[]) => {
+
+   console.log(totalAsistentesEstado2, 'asistentes');
+  // Filtra los asistentes que pertenecen a ese evento y tienen el estado 2
+  const asistentesEstado2 = totalAsistentesEstado2.filter(
+    (asistente) => asistente.id_evento === eventoId && asistente.estado_caracterizacion === 2
+  );
+
+  console.log(totalAsistentesEstado2, 'asistentes');
+  return asistentesEstado2.length;  // Devuelve el total de asistentes con estado 2 para ese evento
 };
 
 
@@ -763,7 +896,7 @@ const closeModal = () => {
                     }}  onClick={() => setShowQRModal(true)}>
                     Escanear QR
                   </IonButton>
-                  {/* <IonButton slot="end" color="light" onClick={downloadFile}>Descargar bd</IonButton> */}
+                   <IonButton slot="end" color="light" onClick={downloadFile}>Descargar bd</IonButton> 
                   <IonButton slot="end" color='light' onClick={() => {
                     localStorage.removeItem('cedula');
                     history.push('/login'); // Redirigir a login después de borrar 'cedula'
@@ -773,57 +906,100 @@ const closeModal = () => {
               <IonContent fullscreen>
 
                 <IonList>
-                  <IonItem lines="none">
-                    <div className="ion-align-items-center" style={{ width: '100%', display: 'flex', justifyContent: 'space-between' }}>
-                      <IonLabel style={{ width: '80%' }}>Eventos</IonLabel>
-                      {/* <IonLabel style={{ width: '25%' }}>Estado ficha</IonLabel>
-                      <IonLabel style={{ width: '25%' }}>Ficha</IonLabel> */}
-                      <IonLabel style={{ width: '20%' }}>Ver Más</IonLabel>
-                    </div>
+                      <IonItem lines="none">
+                        <div
+                          className="ion-align-items-center"
+                          style={{
+                            width: '100%',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                          }}
+                        >
+                          <IonLabel style={{ width: '70%' }}>Eventos</IonLabel>
+                          <IonLabel style={{ width: '27%' }}>Registrados</IonLabel>
+                          
+                          
+                        </div>
+                      </IonItem>
+                    </IonList>
+
+                   <IonList>
+  {filteredEventos.map((evento, idx) => (
+    <IonAccordionGroup key={idx}>
+      <IonAccordion value={`evento-${evento.id_evento}`}>
+        <IonItem slot="header" color="light">
+          <div
+            style={{
+              width: '100%',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            }}
+          >
+            <IonLabel style={{ width: '70%' }}>{evento.nombre_evento}</IonLabel>
+            <IonLabel style={{ width: '20%' }}>
+              {contarAsistentesEstado2PorEvento(evento.id_evento, asistentesEvento)}
+            </IonLabel>
+          </div>
+        </IonItem>
+
+        <div className="ion-padding" slot="content">
+          <IonList>
+            {/* Verificar si no hay actividades */}
+            {actividades.filter((act) => act.id_evento === evento.id_evento).length === 0 ? (
+              // Si no hay actividades, mostrar los inscritos con id_actividad igual a 0
+              <>
+                <IonItem>
+                  <IonLabel>Sin Actividades</IonLabel>
+                </IonItem>
+
+                {/* Mostrar los inscritos con id_actividad igual a 0 */}
+                {asistentesEvento
+                  .filter((asistente) => asistente.id_evento === evento.id_evento && asistente.id_actividad === 0)
+                  .map((asistente, idx) => (
+                    <IonItem key={idx}>
+                      <IonLabel>
+                        <h2>Inscrito: {asistente.usuario}</h2>
+                        <p>Fecha de Registro: {asistente.fecharegistro}</p>
+                      </IonLabel>
+                    </IonItem>
+                  ))}
+              </>
+            ) : (
+              // Si hay actividades, mostrar las actividades y sus inscritos
+              actividades
+                .filter((act) => act.id_evento === evento.id_evento)
+                .map((actividad, i) => (
+                  <IonItem key={i}>
+                    <IonLabel>
+                      <h2>📚 {actividad.nombre_curso}</h2>
+                      <p>📍 {actividad.lugar} — {actividad.fecha_inicio} {actividad.hora_inicio}</p>
+                      <p>👥 Inscritos: {
+                        accesosEvento.filter(
+                          (a) => a.id_evento === evento.id_evento && a.id_curso === actividad.id
+                        ).length
+                      }</p>
+                      <p>✅ Asistentes: {
+                        uniqueAsistentes.filter(
+                          (a) => a.id_evento === evento.id_evento && a.id_actividad === actividad.id
+                        ).length
+                      }</p>
+                    </IonLabel>
                   </IonItem>
-                </IonList>
+                ))
+            )}
+          </IonList>
+        </div>
+      </IonAccordion>
+    </IonAccordionGroup>
+  ))}
+</IonList>
 
-               <IonList>
-                    {filteredEventos.map((evento, idx) => (
-                      <IonAccordionGroup key={idx}>
-                        <IonAccordion value={`evento-${evento.id_evento}`}>
-                          <IonItem slot="header" color="light">
-                            <IonLabel>
-                              <h2>{evento.nombre_evento}</h2>
-                              <p>{evento.descripcion}</p>
-                            </IonLabel>
-                          </IonItem>
 
-                          <div className="ion-padding" slot="content">
-                            <IonList>
-                              {actividades
-                                .filter(act => act.id_evento === evento.id_evento)
-                                .map((actividad, i) => (
-                                  <IonItem key={i}>
-                                    <IonLabel>
-                                      <h2>📚 {actividad.nombre_curso}</h2>
-                                      <p>📍 {actividad.lugar} — {actividad.fecha_inicio} {actividad.hora_inicio}</p>
-                                      <p>👥 Inscritos: {
-                                        accesosEvento.filter(a => 
-                                          a.id_evento === evento.id_evento &&
-                                          a.id_curso === actividad.id
-                                        ).length
-                                      }</p>
-                                      <p>✅ Asistentes: {
-                                            asistentesEvento.filter(a =>
-                                              a.id_evento === evento.id_evento &&
-                                              a.id_actividad === actividad.id
-                                            ).length
-                                          }</p>
-                                    </IonLabel>
-                                  </IonItem>
-                                ))}
-                            </IonList>
-                          </div>
-                        </IonAccordion>
-                      </IonAccordionGroup>
-                    ))}
-                  </IonList>
+
+               
+
 
 
               </IonContent>
@@ -909,7 +1085,7 @@ const closeModal = () => {
                                       (c) => c.id === a.id_curso && c.id_evento === a.id_evento
                                     );
 
-                                    console.log("🎯 Curso inscrito:", curso);
+                                  //  console.log("🎯 Curso inscrito:", curso);
 
                                     return (
                                       <li key={idx}>

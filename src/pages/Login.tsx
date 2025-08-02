@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { IonContent, IonGrid, IonCol, IonRow, IonHeader,IonInput, IonPage, IonTitle, IonToolbar, IonButton, IonList, useIonViewDidEnter, IonLabel, IonItem, IonAccordion, IonAccordionGroup, IonSearchbar } from '@ionic/react';
+import { IonContent, IonGrid, IonCol, IonRow, IonHeader,IonInput, IonPage, IonTitle, IonToolbar, IonButton, IonList, useIonViewDidEnter, IonLabel, IonItem, IonAccordion, IonAccordionGroup, IonSearchbar, IonSpinner } from '@ionic/react';
 import axios from "axios";
 import loadSQL from '../models/database';
 import './Login.css';
@@ -26,6 +26,8 @@ const Login = () => {
   const [people, setPeople] = useState<Person[]>([]);
   const [username, setUsername] = useState<string>('');
   const [password, setPassword] = useState<string>('');
+  const [loading, setLoading] = useState(false); // Inicializar el estado de carga
+
 
 
 
@@ -41,7 +43,7 @@ const Login = () => {
   const saveDatabase = () => {
     if (db) {
       const data = db.export();
-      localStorage.setItem('sqliteDb', JSON.stringify(Array.from(data)));
+      //localStorage.setItem('sqliteDb', JSON.stringify(Array.from(data)));
       const request = indexedDB.open('myDatabase', 1); // Asegúrate de usar el mismo nombre de base de datos
   
       request.onupgradeneeded = (event) => {
@@ -93,6 +95,7 @@ const Login = () => {
   const sincronizacion = async () => {
     fetchUsers();
     saveDatabase();
+    setLoading(true);
     //console.log(people)
   
 
@@ -226,13 +229,74 @@ const Login = () => {
           ]);
         }
 
-         saveDatabase();
-        fetchUsers();
+            saveDatabase();
+            fetchUsers();
+          } catch (err) {
+            console.error('Error al descargar asistentes:', err);
+    }
+
+    try {
+    // Primero se obtiene los asistentes del endpoint fc_juventud_eventos_asistentes
+    const responseAsistentes = await axios.get('https://secretariadeinclusionsocial.co/appinclusionsocial/index.php/juventud/api_sincro_app/fc_juventud_eventos_asistentes');
+    const jsonDataAsistentes = responseAsistentes.data;
+
+    for (const item of jsonDataAsistentes) {
+      await db.run(`
+        INSERT OR REPLACE INTO t1_asistentes_evento (
+          id_evento, id_usuario, id_actividad, ingreso, fecharegistro,
+          usuario, token, estado, tabla
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);`, [
+          item.id_evento,
+          item.id_usuario,
+          item.id_actividad,
+          item.ingreso,
+          item.fecharegistro,
+          item.usuario,
+          item.token,
+          item.estado,
+          item.tabla
+      ]);
+    }
+
+    console.log('Asistentes descargados y guardados correctamente.');
+
+    // Luego se obtiene los datos de la tabla inclusion_ciudadano
+    const responseInclusion = await axios.get('https://secretariadeinclusionsocial.co/appinclusionsocial/index.php/juventud/api_sincro_app/fc_inclusion_ciudadano');
+    const jsonDataInclusion = responseInclusion.data;
+
+    for (const item of jsonDataInclusion) {
+      await db.run(`
+        INSERT OR REPLACE INTO t1_inclusion_ciudadano (
+          id_usuario, yearpostulacion, nacionalidad, tipodedocumento, numerodedocumento, nombre1, nombre2,
+          apellido1, apellido2, fechadenacimiento, sexo, orientacionsexual, identidaddegenero, etnia,
+          estadocivil, gestantelactante, escolaridad, parentesco, discapacidad, regimendesalud, enfermedades,
+          actividad, ocupacion, campesino, victima, sisbenizado, fecharegistro, usuario, estado, tabla,
+          auditiva, mental, fisica, sordoceguera, visual, intelectual, habitanzacalle, correoelectronico,
+          telcontactouno, telcontactodos, fechadenacimiento_verificada, formulario, numerodedocumento_unico,
+          es_cuidadora, usuario_creacion, fecha_creacion
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`, [
+          item.id_usuario, item.yearpostulacion, item.nacionalidad, item.tipodedocumento, item.numerodedocumento,
+          item.nombre1, item.nombre2, item.apellido1, item.apellido2, item.fechadenacimiento, item.sexo,
+          item.orientacionsexual, item.identidaddegenero, item.etnia, item.estadocivil, item.gestantelactante,
+          item.escolaridad, item.parentesco, item.discapacidad, item.regimendesalud, item.enfermedades,
+          item.actividad, item.ocupacion, item.campesino, item.victima, item.sisbenizado, item.fecharegistro,
+          item.usuario, item.estado, item.tabla, item.auditiva, item.mental, item.fisica, item.sordoceguera,
+          item.visual, item.intelectual, item.habitanzacalle, item.correoelectronico, item.telcontactouno,
+          item.telcontactodos, item.fechadenacimiento_verificada, item.formulario, item.numerodedocumento_unico,
+          item.es_cuidadora, item.usuario_creacion, item.fecha_creacion
+      ]);
+    }
+
+    console.log('Datos de inclusion_ciudadano descargados y guardados correctamente.');
+
+    // Guardar cambios en la base de datos
+          saveDatabase();
+          fetchUsers();
+           setLoading(false);
       } catch (err) {
-        console.error('Error al descargar asistentes:', err);
-}
-
-
+          console.error('Error al descargar datos:', err);
+           setLoading(false);
+      }
 
   }
 
@@ -261,6 +325,28 @@ const Login = () => {
                     <IonCol style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <img height="50%" width="50%" src={LogoCAH} alt="Logo" />
                     </IonCol>
+                    {loading && (
+                        <div style={{
+                          position: 'fixed',
+                          top: 0,
+                          left: 0,
+                          width: '100%',
+                          height: '100%',
+                          display: 'flex',
+                          justifyContent: 'center',
+                          alignItems: 'center',
+                          backgroundColor: 'rgba(255, 255, 255, 0.7)', // Fondo semi-transparente
+                          zIndex: 9999,
+                          flexDirection: 'column', // Para que el texto esté debajo del spinner
+                        }}>
+                          <IonSpinner name="dots" color="primary" style={{ fontSize: '120px' }} /> {/* Un tamaño adecuado para el spinner */}
+                          <p style={{ fontSize: '24px', marginTop: '20px' }}>Descargando datos...</p> {/* Texto debajo del spinner, con un tamaño proporcional */}
+                        </div>
+                      )}
+
+
+
+
                     <IonRow>
                         <IonCol>
                         {(people[0]?.cedula)?    <IonItem >
