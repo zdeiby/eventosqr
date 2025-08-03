@@ -607,25 +607,34 @@ const fetchAsistentesEvento = async (database = db) => {
             for (const item of chunk) {
               await db.run(`
                 INSERT OR REPLACE INTO inclusion_ciudadano (
-                  id_usuario, yearpostulacion, nacionalidad, tipodedocumento, numerodedocumento, nombre1, nombre2,
-                  apellido1, apellido2, fechadenacimiento, sexo, orientacionsexual, identidaddegenero, etnia,
-                  estadocivil, gestantelactante, escolaridad, parentesco, discapacidad, regimendesalud, enfermedades,
-                  actividad, ocupacion, campesino, victima, sisbenizado, fecharegistro, usuario, estado, tabla,
-                  auditiva, mental, fisica, sordoceguera, visual, intelectual, habitanzacalle, correoelectronico,
-                  telcontactouno, telcontactodos, fechadenacimiento_verificada, formulario, numerodedocumento_unico,
-                  es_cuidadora, usuario_creacion, fecha_creacion
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                  id_usuario, 
+                  yearpostulacion, 
+                  numerodedocumento, 
+                  nombre1, 
+                  nombre2, 
+                  apellido1, 
+                  apellido2, 
+                  fecharegistro, 
+                  usuario, 
+                  estado, 
+                  fecha_creacion
+                ) VALUES (
+                  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                );
               `, [
-                item.id_usuario, item.yearpostulacion, item.nacionalidad, item.tipodedocumento, item.numerodedocumento,
-                item.nombre1, item.nombre2, item.apellido1, item.apellido2, item.fechadenacimiento, item.sexo,
-                item.orientacionsexual, item.identidaddegenero, item.etnia, item.estadocivil, item.gestantelactante,
-                item.escolaridad, item.parentesco, item.discapacidad, item.regimendesalud, item.enfermedades,
-                item.actividad, item.ocupacion, item.campesino, item.victima, item.sisbenizado, item.fecharegistro,
-                item.usuario, item.estado, item.tabla, item.auditiva, item.mental, item.fisica, item.sordoceguera,
-                item.visual, item.intelectual, item.habitanzacalle, item.correoelectronico, item.telcontactouno,
-                item.telcontactodos, item.fechadenacimiento_verificada, item.formulario, item.numerodedocumento_unico,
-                item.es_cuidadora, item.usuario_creacion, item.fecha_creacion
+                item.id_usuario, 
+                item.yearpostulacion, 
+                item.numerodedocumento, 
+                item.nombre1, 
+                item.nombre2, 
+                item.apellido1, 
+                item.apellido2, 
+                item.fecharegistro, 
+                item.usuario, 
+                item.estado, 
+                item.fecha_creacion
               ]);
+
             }
 
             // Actualiza el progreso según el número de bloques procesados
@@ -924,7 +933,7 @@ const contarAsistentesEstado2PorEvento = (eventoId: number, totalAsistentesEstad
                       </IonItem>
                     </IonList>
 
-                   <IonList>
+                  <IonList>
   {filteredEventos.map((evento, idx) => (
     <IonAccordionGroup key={idx}>
       <IonAccordion value={`evento-${evento.id_evento}`}>
@@ -948,23 +957,17 @@ const contarAsistentesEstado2PorEvento = (eventoId: number, totalAsistentesEstad
           <IonList>
             {/* Verificar si no hay actividades */}
             {actividades.filter((act) => act.id_evento === evento.id_evento).length === 0 ? (
-              // Si no hay actividades, mostrar los inscritos con id_actividad igual a 0
               <>
                 <IonItem>
                   <IonLabel>Sin Actividades</IonLabel>
                 </IonItem>
 
-                {/* Mostrar los inscritos con id_actividad igual a 0 */}
-                {asistentesEvento
-                  .filter((asistente) => asistente.id_evento === evento.id_evento && asistente.id_actividad === 0)
-                  .map((asistente, idx) => (
-                    <IonItem key={idx}>
-                      <IonLabel>
-                        <h2>Inscrito: {asistente.usuario}</h2>
-                        <p>Fecha de Registro: {asistente.fecharegistro}</p>
-                      </IonLabel>
-                    </IonItem>
-                  ))}
+                {/* Contar los inscritos con id_actividad igual a 0 */}
+                <IonItem>
+                  <IonLabel>
+                    <h2>Asistentes: {asistentesEvento.filter((asistente) => asistente.id_evento === evento.id_evento && asistente.id_actividad === 0).length}</h2>
+                  </IonLabel>
+                </IonItem>
               </>
             ) : (
               // Si hay actividades, mostrar las actividades y sus inscritos

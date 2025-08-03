@@ -237,25 +237,23 @@ const Login = () => {
 
     try {
     // Primero se obtiene los asistentes del endpoint fc_juventud_eventos_asistentes
-    const responseAsistentes = await axios.get('https://secretariadeinclusionsocial.co/appinclusionsocial/index.php/juventud/api_sincro_app/fc_juventud_eventos_asistentes');
+    const responseAsistentes = await axios.get('https://secretariadeinclusionsocial.co/appinclusionsocial/index.php/juventud/api_sincro_app/fc_juventud_eventos_general_asistentes');
     const jsonDataAsistentes = responseAsistentes.data;
 
     for (const item of jsonDataAsistentes) {
       await db.run(`
-        INSERT OR REPLACE INTO t1_asistentes_evento (
-          id_evento, id_usuario, id_actividad, ingreso, fecharegistro,
-          usuario, token, estado, tabla
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);`, [
+       INSERT OR REPLACE INTO juventud_eventos_estado_evento (
+            id_evento, id_usuario, estado_caracterizacion, fecharegistro,
+            usuario, estado, tabla
+          ) VALUES (?, ?, ?, ?, ?, ?, ?);`, [
           item.id_evento,
           item.id_usuario,
-          item.id_actividad,
-          item.ingreso,
+          item.estado_caracterizacion,
           item.fecharegistro,
           item.usuario,
-          item.token,
           item.estado,
           item.tabla
-      ]);
+        ]);
     }
 
     console.log('Asistentes descargados y guardados correctamente.');
@@ -266,24 +264,32 @@ const Login = () => {
 
     for (const item of jsonDataInclusion) {
       await db.run(`
-        INSERT OR REPLACE INTO t1_inclusion_ciudadano (
-          id_usuario, yearpostulacion, nacionalidad, tipodedocumento, numerodedocumento, nombre1, nombre2,
-          apellido1, apellido2, fechadenacimiento, sexo, orientacionsexual, identidaddegenero, etnia,
-          estadocivil, gestantelactante, escolaridad, parentesco, discapacidad, regimendesalud, enfermedades,
-          actividad, ocupacion, campesino, victima, sisbenizado, fecharegistro, usuario, estado, tabla,
-          auditiva, mental, fisica, sordoceguera, visual, intelectual, habitanzacalle, correoelectronico,
-          telcontactouno, telcontactodos, fechadenacimiento_verificada, formulario, numerodedocumento_unico,
-          es_cuidadora, usuario_creacion, fecha_creacion
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`, [
-          item.id_usuario, item.yearpostulacion, item.nacionalidad, item.tipodedocumento, item.numerodedocumento,
-          item.nombre1, item.nombre2, item.apellido1, item.apellido2, item.fechadenacimiento, item.sexo,
-          item.orientacionsexual, item.identidaddegenero, item.etnia, item.estadocivil, item.gestantelactante,
-          item.escolaridad, item.parentesco, item.discapacidad, item.regimendesalud, item.enfermedades,
-          item.actividad, item.ocupacion, item.campesino, item.victima, item.sisbenizado, item.fecharegistro,
-          item.usuario, item.estado, item.tabla, item.auditiva, item.mental, item.fisica, item.sordoceguera,
-          item.visual, item.intelectual, item.habitanzacalle, item.correoelectronico, item.telcontactouno,
-          item.telcontactodos, item.fechadenacimiento_verificada, item.formulario, item.numerodedocumento_unico,
-          item.es_cuidadora, item.usuario_creacion, item.fecha_creacion
+        INSERT OR REPLACE INTO inclusion_ciudadano (
+        id_usuario, 
+        yearpostulacion, 
+        numerodedocumento, 
+        nombre1, 
+        nombre2, 
+        apellido1, 
+        apellido2, 
+        fecharegistro, 
+        usuario, 
+        estado, 
+        fecha_creacion
+      ) VALUES (
+        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+      );`, [
+        item.id_usuario, 
+        item.yearpostulacion, 
+        item.numerodedocumento, 
+        item.nombre1, 
+        item.nombre2, 
+        item.apellido1, 
+        item.apellido2, 
+        item.fecharegistro, 
+        item.usuario, 
+        item.estado, 
+        item.fecha_creacion
       ]);
     }
 
