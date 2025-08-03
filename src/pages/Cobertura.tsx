@@ -675,6 +675,10 @@ const fetchAsistentesEvento = async (database = db) => {
     }
     saveDatabase();
     fetchEventos();
+    contarAsistentesEstado2();
+    fetchActividades();
+    fetchAccesosEvento();
+    fetchAsistentesEvento();
     setPorcentaje(100);
     await openModal('Sincronización efectiva', 'success', 'light', 'none');
   };
