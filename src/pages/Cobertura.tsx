@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { IonContent, IonHeader, IonPage, IonTitle, IonToolbar, IonButton, IonList, useIonViewDidEnter, IonLabel, IonItem, IonAccordion, IonAccordionGroup, IonSearchbar, IonModal, IonButtons, IonSelect, IonSelectOption } from '@ionic/react';
+import { IonContent, IonHeader, IonPage, IonTitle, IonToolbar, IonButton, IonList, useIonViewDidEnter, IonLabel, IonItem, IonAccordion, IonAccordionGroup, IonSearchbar, IonModal, IonButtons, IonSelect, IonSelectOption, IonInput } from '@ionic/react';
 import { useHistory } from 'react-router-dom';
 import axios from "axios";
 import loadSQL from '../models/database';
@@ -134,14 +134,28 @@ const Cobertura: React.FC = () => {
   const [scanner, setScanner] = useState<any>(null);
   const [cursosInscritos, setCursosInscritos] = useState<Actividad[]>([]);
   const [totalAsistentesEstado2, setTotalAsistentesEstado2] =useState<EventoAsistente[]>([]);
-
-
-
-
+// flujo “por cédula”
+const [showDocModal, setShowDocModal] = useState(false);
+const [docInput, setDocInput] = useState('');
+const [showEventModal, setShowEventModal] = useState(false);
+const [eventosUsuario, setEventosUsuario] = useState<Evento[]>([]);
+const [selectedEvent, setSelectedEvent] = useState<number | null>(null);
+const [manualUserId, setManualUserId] = useState<number | null>(null);
   const [sincro, setSincro] = useState<any>(false);
   const [porcentaje, setPorcentaje] = useState<any>(1);
   const [showModal, setShowModal] = useState(false);
   const [dbContent, setDbContent] = useState<Uint8Array | null>(null);
+
+
+  // 1) Deja el state igual
+        const ROLE_PROJECT: Record<number, string> = {
+          123: '1,2,3,4,5,6,7,8,9,10,11,12', // 👈 este rol ve proyecto 1 y 2
+          6: '11',
+         // 7: '3',
+          27: '11',
+        };
+
+  const [allowedProject, setAllowedProject] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchDatabaseContent = async () => {
@@ -247,7 +261,7 @@ useEffect(() => {
                 return;
               }
 
-              setDecodedData({ id_usuario, id_evento, token });
+              setDecodedData({ id_usuario, id_evento, token, source: 'qr' });
               setShowCursoModal(true);
             } catch (error) {
               alert("❌ QR inválido o mal formado");
@@ -267,6 +281,67 @@ useEffect(() => {
 }, [showQRModal]);
 
 
+// Buscar usuario por cédula en la DB local e hidratar lista de eventos a los que está inscrito
+const onSubmitDocumento = async (e?: React.FormEvent) => {
+  e?.preventDefault();
+  const doc = (docInput || '').trim();
+  if (!doc) { alert('Digita la cédula'); return; }
+  if (!db) { alert('BD no cargada'); return; }
+
+  // 1) Usuario
+  const safeDoc = doc.replace(/'/g, "''");
+  const resU = await db.exec(`
+    SELECT id_usuario, numerodedocumento, nombre1, nombre2, apellido1, apellido2
+    FROM inclusion_ciudadano
+    WHERE numerodedocumento='${safeDoc}'
+    LIMIT 1;
+  `);
+
+  const rowU = resU?.[0]?.values?.[0];
+  if (!rowU) { alert('Usuario no encontrado'); return; }
+
+  // mapea por nombre de columna
+  const colsU = resU[0].columns;
+  const userObj: any = {};
+  colsU.forEach((c: string, i: number) => userObj[c] = rowU[i]);
+  const uid = Number(userObj.id_usuario);
+  setManualUserId(uid);
+
+  // 2) Eventos en los que el usuario está inscrito (t1_accesos_eventos)
+  const resE = await db.exec(`
+    SELECT DISTINCT e.id_evento, e.nombre_evento, e.descripcion, e.lugar_evento,
+           e.fecha_inicio_evento, e.hora_inicio_evento, e.fecha_fin_evento, e.hora_fin_evento, e.cupos_totales, e.estado_evento
+    FROM t1_eventos e
+    INNER JOIN t1_accesos_eventos a ON a.id_evento = e.id_evento
+    WHERE a.id_usuario = ${uid}
+    ORDER BY e.fecha_inicio_evento DESC;
+  `);
+
+  const eventosList: Evento[] = (resE?.[0]?.values || []).map((row: any[]) => {
+    const o: any = {};
+    resE[0].columns.forEach((c: string, i: number) => o[c] = row[i]);
+    return o as Evento;
+  });
+
+  setEventosUsuario(eventosList);
+  setShowDocModal(false);
+  setShowEventModal(true);
+  setSelectedEvent(null);
+};
+
+// Confirmar evento y abrir el modal de actividades reutilizando tu flujo actual
+const onSubmitEventoSeleccionado = () => {
+  if (!manualUserId) { alert('Usuario no válido'); return; }
+  if (!selectedEvent) { alert('Selecciona un evento'); return; }
+
+  // Reutilizamos tu modal de actividades: armamos decodedData "manual"
+  setDecodedData({ id_usuario: manualUserId, id_evento: selectedEvent, token: null, source: 'cedula' });
+  setShowEventModal(false);
+  setShowCursoModal(true);
+};
+
+
+
 
 const registrarAsistencia = async () => {
   if (cursosFiltrados.length > 0 && !selectedCurso) {
@@ -274,15 +349,16 @@ const registrarAsistencia = async () => {
     return;
   }
 
-  const hoy = new Date().toISOString().split("T")[0];
-  const now = new Date().toISOString().replace("T", " ").split(".")[0]; // para fecharegistro con hora
+  const hoy =localDate();
+  const now = localDateTime();
   const usuarioSistema = localStorage.getItem('cedula') || "sistema";
+  const ingresoTipo = decodedData?.source === 'cedula' ? 'cedula' : 'qr';
 
   const nuevoRegistro = {
     id_evento: parseInt(decodedData.id_evento),
     id_usuario: parseInt(decodedData.id_usuario),
     id_actividad: selectedCurso ? parseInt(selectedCurso) : 0,
-    ingreso: "qr",
+    ingreso: ingresoTipo,
     fecharegistro: now,
     usuario: usuarioSistema,
     token: decodedData.token,
@@ -333,6 +409,7 @@ const registrarAsistencia = async () => {
 
   useEffect(() => {
     const syncData = async () => {
+       const project = await cargarProyectoPermitido(db);
       await loadSQL(setDb, fetchEventos);
       await fetchEventos(); 
       await  contarAsistentesEstado2();
@@ -346,6 +423,7 @@ const registrarAsistencia = async () => {
 
   useEffect(() => {
     const syncData = async () => {
+       const project = await cargarProyectoPermitido(db);
     await fetchEventos(); 
     await  contarAsistentesEstado2();
     await fetchActividades();
@@ -393,20 +471,62 @@ const registrarAsistencia = async () => {
     }
   };
 
-  const fetchEventos = async (database = db) => {
-  if (database) {
-    const res = await database.exec('SELECT * FROM "t1_eventos";');
-    if (res[0]?.values && res[0]?.columns) {
-      const transformedEventos: Evento[] = res[0].values.map((row: any[]) => {
-        return res[0].columns.reduce((obj, col, index) => {
-          obj[col] = row[index];
-          return obj;
-        }, {} as Evento);
-      });
-      setEventos(transformedEventos);
-    }
+//   const fetchEventos = async (database = db , project: string | null = allowedProject) => {
+//   if (database) {
+//     //const res = await database.exec('SELECT * FROM "t1_eventos";');
+//     const where = project ? ` WHERE CAST(proyecto AS TEXT)='${project}'` : '';
+//     const res = await database.exec(`SELECT * FROM "t1_eventos"${where};`);
+
+//     if (res[0]?.values && res[0]?.columns) {
+//       const transformedEventos: Evento[] = res[0].values.map((row: any[]) => {
+//         return res[0].columns.reduce((obj, col, index) => {
+//           obj[col] = row[index];
+//           return obj;
+//         }, {} as Evento);
+//       });
+//       setEventos(transformedEventos);
+//     }
+//   }
+// };
+
+// 2) Reemplaza SOLO tu fetchEventos por este (detecta comas y usa IN):
+const fetchEventos = async (database = db, project: string | null = allowedProject) => {
+  if (!database) return;
+
+  // Si todavía no hay proyecto en state, lo cargamos aquí mismo
+  if (!project) {
+    project = await cargarProyectoPermitido(database);
+  }
+
+  let where = ' WHERE 1=0';
+  if (project) {
+    const list = project
+      .split(',')
+      .map(p => p.trim())
+      .filter(Boolean)
+      .map(p => `'${p.replace(/'/g, "''")}'`)
+      .join(',');
+
+    where = project.includes(',')
+      ? ` WHERE CAST(proyecto AS TEXT) IN (${list})`
+      : ` WHERE CAST(proyecto AS TEXT)='${project.trim().replace(/'/g, "''")}'`;
+  }
+
+  const res = await database.exec(`SELECT * FROM "t1_eventos"${where};`);
+  if (res[0]?.values && res[0]?.columns) {
+    const transformedEventos: Evento[] = res[0].values.map((row: any[]) =>
+      res[0].columns.reduce((obj, col, index) => {
+        (obj as any)[col] = row[index];
+        return obj;
+      }, {} as Evento)
+    );
+    setEventos(transformedEventos);
+  } else {
+    setEventos([]);
   }
 };
+
+
 
 
 const contarAsistentesEstado2 = async (database = db) => {
@@ -503,8 +623,8 @@ const fetchAsistentesEvento = async (database = db) => {
   const descargarUsuarios = async () => {
     const response = await axios.get('https://secretariadeinclusionsocial.co/appinclusionsocial/index.php/juventud/api_sincro_app/fc_login');
     for (const item of response.data) {
-      await db.run(`INSERT OR REPLACE INTO t1_comision (id_usuario, cedula, contrasena, estado) VALUES (?, ?, ?, ?);`, [
-        item.ID_USUARIO, item.CEDULA, item.CONTRASENA, item.ESTADO
+      await db.run(`INSERT OR REPLACE INTO t1_comision (id_usuario, cedula, contrasena, estado,rol) VALUES (?, ?, ?, ?,?);`, [
+        item.ID_USUARIO, item.CEDULA, item.CONTRASENA, item.ESTADO,item.ROL
       ]);
     }
     saveDatabase();
@@ -520,8 +640,8 @@ const fetchAsistentesEvento = async (database = db) => {
     for (const item of response.data) {
       await db.run(`INSERT OR REPLACE INTO t1_eventos (
         id_evento, estado_evento, nombre_evento, descripcion, lugar_evento,
-        fecha_inicio_evento, hora_inicio_evento, fecha_fin_evento, hora_fin_evento, cupos_totales
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`, [
+        fecha_inicio_evento, hora_inicio_evento, fecha_fin_evento, hora_fin_evento, cupos_totales, proyecto
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?);`, [
         item.id_evento,
         item.estado_evento,
         item.nombre_evento,
@@ -531,7 +651,8 @@ const fetchAsistentesEvento = async (database = db) => {
         item.hora_inicio_evento,
         item.fecha_fin_evento,
         item.hora_fin_evento,
-        item.cupos_totales
+        item.cupos_totales,
+        item.proyecto
       ]);
     }
     saveDatabase();
@@ -561,6 +682,9 @@ const fetchAsistentesEvento = async (database = db) => {
       ]);
     }
     saveDatabase();
+
+    const project = allowedProject ?? await cargarProyectoPermitido(db);
+  await fetchEventos(db, project);
     fetchEventos();
     setPorcentaje(40);
   };
@@ -591,6 +715,45 @@ const fetchAsistentesEvento = async (database = db) => {
     };
 
       if (!(await retryConDecision(descargarJuventudEventosEstadoEvento, 'Error al descargar asistentes'))) return setSincro(false);
+
+      // 🟩 DESCARGAR ACCESOS A EVENTOS (inscripciones a actividades)
+        const descargarAccesosEvento = async () => {
+          const response = await axios.get(
+            'https://secretariadeinclusionsocial.co/appinclusionsocial/index.php/juventud/api_sincro_app/fc_juventud_eventos_accesos'
+          );
+
+          const jsonData = response.data; 
+          await db.run('DELETE FROM t1_accesos_eventos;');
+          // console.log('Datos JSON recibidos (accesos):', jsonData);
+
+          for (const item of jsonData) {
+           
+            await db.run(
+              `
+              INSERT OR REPLACE INTO t1_accesos_eventos (
+                id_evento, id_curso, id_usuario, usuario, tabla, fecharegistro, estado
+              ) VALUES (?, ?, ?, ?, ?, ?, ?);
+              `,
+              [
+                item.id_evento,
+                item.id_curso,
+                item.id_usuario,
+                item.usuario,
+                item.tabla,
+                item.fecharegistro,
+                item.estado
+              ]
+            );
+          }
+
+          saveDatabase();
+          await fetchAccesosEvento(); // refresca la lista en memoria
+          setPorcentaje(50);          // ajusta el avance donde te convenga
+        };
+
+        // Llamada con reintento (ubicar en el flujo principal)
+        if (!(await retryConDecision(descargarAccesosEvento, 'Error al descargar accesos'))) return setSincro(false);
+
 
 
       // 🟩 DESCARGAR INCLUSION CIUDADANO
@@ -724,14 +887,39 @@ const fetchAsistentesEvento = async (database = db) => {
   const [searchText, setSearchText] = useState('');
 
 
+// const filteredEventos = eventos.filter((evento) => {
+//   const texto = searchText.toLowerCase();
+//   return (
+//     (evento.nombre_evento || '').toLowerCase().includes(texto) ||
+//     (evento.descripcion || '').toLowerCase().includes(texto) ||
+//     (evento.lugar_evento || '').toLowerCase().includes(texto)
+//   );
+// });
+
+const norm = (s: any) =>
+  String(s ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+
+
 const filteredEventos = eventos.filter((evento) => {
-  const texto = searchText.toLowerCase();
-  return (
-    (evento.nombre_evento || '').toLowerCase().includes(texto) ||
-    (evento.descripcion || '').toLowerCase().includes(texto) ||
-    (evento.lugar_evento || '').toLowerCase().includes(texto)
+  const q = norm(searchText);
+  if (!q) return true;
+
+  const matchEvento = [evento.nombre_evento, evento.descripcion, evento.lugar_evento]
+    .some((v) => norm(v).includes(q));
+
+  const matchActividad = actividades.some(
+    (act) =>
+      act.id_evento === evento.id_evento &&
+      [act.nombre_curso, act.descripcion, act.lugar]
+        .some((v) => norm(v).includes(q))
   );
+
+  return matchEvento || matchActividad;
 });
+
 
 
   const [modalResolve, setModalResolve] = useState<((value: boolean) => void) | null>(null);
@@ -818,6 +1006,42 @@ const contarAsistentesEstado2PorEvento = (eventoId: number, totalAsistentesEstad
 };
 
 
+// Helper: "YYYY-MM-DD HH:mm:ss" en hora local del dispositivo
+const localDateTime = () => {
+  const d = new Date();
+  const tz = d.getTimezoneOffset() * 60000;           // minutos → ms
+  return new Date(d.getTime() - tz)                   // corrige a local
+    .toISOString()
+    .slice(0, 19)                                     // YYYY-MM-DDTHH:mm:ss
+    .replace('T', ' ');
+};
+
+const localDate = () => localDateTime().slice(0, 10); // YYYY-MM-DD
+
+          // ponlo junto a tus otros useEffect
+          useEffect(() => {
+            if (showDocModal) setDocInput('');   // ← cada vez que abras el modal, pone "0"
+          }, [showDocModal]);
+
+          const cargarProyectoPermitido = async (database = db) => {
+            if (!database) return null;
+            const ced = localStorage.getItem('cedula') || '';
+            if (!ced) { setAllowedProject(null); return null; }
+
+            const safeCed = ced.replace(/'/g, "''");
+            const res = await database.exec(`
+              SELECT rol
+              FROM t1_comision
+              WHERE cedula='${safeCed}'
+              LIMIT 1;
+            `);
+
+            const rol = Number(res?.[0]?.values?.[0]?.[0]);
+            const project = ROLE_PROJECT[rol] ?? null;
+            setAllowedProject(project);
+            return project;
+          };
+
  
   return (
 
@@ -903,13 +1127,21 @@ const contarAsistentesEstado2PorEvento = (eventoId: number, totalAsistentesEstad
                     //localStorage.removeItem('cedula');
                     window.location.href = `/tabs/tab3/${Math.random().toString().substr(2, 5)}${cedula}`;
                   }}>Crear Ficha</IonButton> */}
+                  <IonButton
+                    slot="end"
+                    style={{ '--background': '#0e7fe1', '--color': 'white' }}
+                    onClick={() => setShowDocModal(true)}
+                  >
+                    Identificación
+                  </IonButton>
+
                   <IonButton slot="end"  style={{
                       '--background': '#0e7fe1',
                       '--color': 'white' // color del texto
                     }}  onClick={() => setShowQRModal(true)}>
-                    Escanear QR
+                    QR
                   </IonButton>
-                   <IonButton slot="end" color="light" onClick={downloadFile}>Descargar bd</IonButton> 
+                  {/* <IonButton slot="end" color="light" onClick={downloadFile}>Descargar bd</IonButton> */}
                   <IonButton slot="end" color='light' onClick={() => {
                     localStorage.removeItem('cedula');
                     history.push('/login'); // Redirigir a login después de borrar 'cedula'
@@ -937,7 +1169,7 @@ const contarAsistentesEstado2PorEvento = (eventoId: number, totalAsistentesEstad
                       </IonItem>
                     </IonList>
 
-                  <IonList>
+                  {/* <IonList>
   {filteredEventos.map((evento, idx) => (
     <IonAccordionGroup key={idx}>
       <IonAccordion value={`evento-${evento.id_evento}`}>
@@ -959,14 +1191,14 @@ const contarAsistentesEstado2PorEvento = (eventoId: number, totalAsistentesEstad
 
         <div className="ion-padding" slot="content">
           <IonList>
-            {/* Verificar si no hay actividades */}
+         
             {actividades.filter((act) => act.id_evento === evento.id_evento).length === 0 ? (
               <>
                 <IonItem>
                   <IonLabel>Sin Actividades</IonLabel>
                 </IonItem>
 
-                {/* Contar los inscritos con id_actividad igual a 0 */}
+            
                 <IonItem>
                   <IonLabel>
                     <h2>Asistentes: {asistentesEvento.filter((asistente) => asistente.id_evento === evento.id_evento && asistente.id_actividad === 0).length}</h2>
@@ -977,6 +1209,13 @@ const contarAsistentesEstado2PorEvento = (eventoId: number, totalAsistentesEstad
               // Si hay actividades, mostrar las actividades y sus inscritos
               actividades
                 .filter((act) => act.id_evento === evento.id_evento)
+                .sort((a, b) =>
+                    (a.nombre_curso || '').localeCompare(
+                      (b.nombre_curso || ''),
+                      'es',
+                      { sensitivity: 'base', numeric: true }
+                    )
+                  )
                 .map((actividad, i) => (
                   <IonItem key={i}>
                     <IonLabel>
@@ -1001,7 +1240,111 @@ const contarAsistentesEstado2PorEvento = (eventoId: number, totalAsistentesEstad
       </IonAccordion>
     </IonAccordionGroup>
   ))}
+</IonList> */}
+
+
+<IonList>
+  {filteredEventos.map((evento, idx) => {
+    const q = norm(searchText);
+
+    const matchEvento = [evento.nombre_evento, evento.descripcion, evento.lugar_evento]
+      .some((v) => norm(v).includes(q));
+
+    const matchActividad = actividades.some(
+      (act) =>
+        act.id_evento === evento.id_evento &&
+        [act.nombre_curso, act.descripcion, act.lugar].some((v) => norm(v).includes(q))
+    );
+
+    const shouldExpand = !!q && (matchEvento || matchActividad);
+
+    const todasDelEvento = actividades.filter((a) => a.id_evento === evento.id_evento);
+
+    const actividadesVisibles = todasDelEvento
+      .filter(
+        (a) =>
+          !q ||
+          [a.nombre_curso, a.descripcion, a.lugar].some((v) => norm(v).includes(q))
+      )
+      .sort((a, b) =>
+        (a.nombre_curso || '').localeCompare((b.nombre_curso || ''), 'es', {
+          sensitivity: 'base',
+          numeric: true,
+        })
+      );
+
+    return (
+      <IonAccordionGroup key={idx} value={shouldExpand ? `evento-${evento.id_evento}` : undefined}>
+        <IonAccordion value={`evento-${evento.id_evento}`}>
+          <IonItem slot="header" color="light">
+            <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <IonLabel style={{ width: '70%' }}>{evento.nombre_evento}</IonLabel>
+              <IonLabel style={{ width: '20%' }}>
+                {contarAsistentesEstado2PorEvento(evento.id_evento, asistentesEvento)}
+              </IonLabel>
+            </div>
+          </IonItem>
+
+          <div className="ion-padding" slot="content">
+            <IonList>
+              {todasDelEvento.length === 0 ? (
+                <>
+                  <IonItem>
+                    <IonLabel>Sin Actividades</IonLabel>
+                  </IonItem>
+                  <IonItem>
+                    <IonLabel>
+                      <h2>
+                        Asistentes:{' '}
+                        {
+                          asistentesEvento.filter(
+                            (a) => a.id_evento === evento.id_evento && a.id_actividad === 0
+                          ).length
+                        }
+                      </h2>
+                    </IonLabel>
+                  </IonItem>
+                </>
+              ) : actividadesVisibles.length === 0 ? (
+                <IonItem>
+                  <IonLabel>Sin actividades coincidentes</IonLabel>
+                </IonItem>
+              ) : (
+                actividadesVisibles.map((actividad, i) => (
+                  <IonItem key={i}>
+                    <IonLabel>
+                      <h2>📚 {actividad.nombre_curso}</h2>
+                      <p>
+                        📍 {actividad.lugar} — {actividad.fecha_inicio} {actividad.hora_inicio}
+                      </p>
+                      <p>
+                        👥 Inscritos:{' '}
+                        {
+                          accesosEvento.filter(
+                            (a) => a.id_evento === evento.id_evento && a.id_curso === actividad.id
+                          ).length
+                        }
+                      </p>
+                      <p>
+                        ✅ Asistentes:{' '}
+                        {
+                          uniqueAsistentes.filter(
+                            (a) => a.id_evento === evento.id_evento && a.id_actividad === actividad.id
+                          ).length
+                        }
+                      </p>
+                    </IonLabel>
+                  </IonItem>
+                ))
+              )}
+            </IonList>
+          </div>
+        </IonAccordion>
+      </IonAccordionGroup>
+    );
+  })}
 </IonList>
+
 
 
 
@@ -1017,9 +1360,9 @@ const contarAsistentesEstado2PorEvento = (eventoId: number, totalAsistentesEstad
               />
               <IonButton onClick={sincronizacion}  
                style={{
-                  '--background': '#0e7fe1',
+                  '--background': '#e1740eff',
                   '--color': 'white' // color del texto
-                }}>Sincronización subida de información</IonButton>
+                }}>Actualizar datos y enviar registro asistentes</IonButton>
 
 
                   {/* Modal de escaneo QR */}
@@ -1113,6 +1456,68 @@ const contarAsistentesEstado2PorEvento = (eventoId: number, totalAsistentesEstad
 
 
               </IonModal>
+
+              {/* Modal 1: Ingresar cédula */}
+<IonModal isOpen={showDocModal} onDidDismiss={() => setShowDocModal(false)}>
+  <IonHeader>
+    <IonToolbar>
+      <IonTitle>Ingreso por cédula</IonTitle>
+      <IonButtons slot="end">
+        <IonButton onClick={() => setShowDocModal(false)}>Cerrar</IonButton>
+      </IonButtons>
+    </IonToolbar>
+  </IonHeader>
+  <IonContent className="ion-padding">
+    <form onSubmit={onSubmitDocumento}>
+      <IonLabel position="stacked">Cédula / Documento</IonLabel>
+      <IonInput
+        value={docInput}
+        onIonChange={(e) => setDocInput(String(e.detail.value || ''))}
+        placeholder="Digite la cédula"
+        inputmode="numeric"
+        required
+      />
+      <IonButton expand="block" className="ion-margin-top" type="submit">
+        Continuar
+      </IonButton>
+    </form>
+  </IonContent>
+</IonModal>
+
+{/* Modal 2: Elegir evento (solo eventos a los que está inscrito) */}
+<IonModal isOpen={showEventModal} onDidDismiss={() => setShowEventModal(false)}>
+  <IonHeader>
+    <IonToolbar>
+      <IonTitle>Elegir evento</IonTitle>
+      <IonButtons slot="end">
+        <IonButton onClick={() => setShowEventModal(false)}>Cerrar</IonButton>
+      </IonButtons>
+    </IonToolbar>
+  </IonHeader>
+  <IonContent className="ion-padding">
+    <IonLabel position="stacked">Evento</IonLabel>
+    <IonSelect
+      interface="popover"
+      placeholder="Seleccione evento"
+      value={selectedEvent ?? undefined}
+      onIonChange={(e) => setSelectedEvent(Number(e.detail.value))}
+    >
+      {eventosUsuario.length
+        ? eventosUsuario.map((ev) => (
+            <IonSelectOption key={ev.id_evento} value={ev.id_evento}>
+              {ev.nombre_evento}
+            </IonSelectOption>
+          ))
+        : <IonSelectOption value="" disabled>No tienes eventos con inscripción</IonSelectOption>
+      }
+    </IonSelect>
+
+    <IonButton expand="block" className="ion-margin-top" onClick={onSubmitEventoSeleccionado}>
+      Continuar
+    </IonButton>
+  </IonContent>
+</IonModal>
+
 
 
 

@@ -1,8 +1,8 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'io.infurbanistica.starter',
-  appName: 'infurbanistica',
+  appId: 'io.appjuventud.starter',
+  appName: 'appjuventud',
   webDir: 'dist',
   plugins: {
     Geolocation: {

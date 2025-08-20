@@ -107,8 +107,8 @@ const Login = () => {
        // setProgramas(jsonData);
        console.log(jsonData)
         for (const item of jsonData) {
-          await db.run(`INSERT OR REPLACE INTO t1_comision (id_usuario, cedula, contrasena, estado) VALUES (?, ?, ?, ?);`, [
-            item.ID_USUARIO, item.CEDULA, item.CONTRASENA,item.ESTADO
+          await db.run(`INSERT OR REPLACE INTO t1_comision (id_usuario, cedula, contrasena, estado, rol) VALUES (?, ?, ?, ?,?);`, [
+            item.ID_USUARIO, item.CEDULA, item.CONTRASENA,item.ESTADO,item.ROL
           ]);
         }
   
@@ -127,8 +127,8 @@ const Login = () => {
        for (const item of jsonData) {
           await db.run(`INSERT OR REPLACE INTO t1_eventos (
             id_evento, estado_evento, nombre_evento, descripcion, lugar_evento,
-            fecha_inicio_evento, hora_inicio_evento, fecha_fin_evento, hora_fin_evento, cupos_totales
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`, [
+            fecha_inicio_evento, hora_inicio_evento, fecha_fin_evento, hora_fin_evento, cupos_totales, proyecto
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?);`, [
             item.id_evento,
             item.estado_evento,
             item.nombre_evento,
@@ -138,7 +138,8 @@ const Login = () => {
             item.hora_inicio_evento,
             item.fecha_fin_evento,
             item.hora_fin_evento,
-            item.cupos_totales
+            item.cupos_totales,
+            item.proyecto
           ]);
         }
   
@@ -375,7 +376,7 @@ const Login = () => {
                         </IonCol>
                     </IonRow>  <hr></hr>
                     {(people[0]?.cedula)?  <IonButton expand="full" color="secondary" onClick={handleLogin}>Iniciar Sesión</IonButton>:''}
-                    {(people[0]?.cedula)?'':  <IonButton expand="full" onClick={sincronizacion}>Sincronización bajada de información</IonButton> }
+                    {(people[0]?.cedula)?'':  <IonButton expand="full" onClick={sincronizacion}>Descargar Información Inscritos</IonButton> }
 
                 </IonGrid>
             </IonContent>

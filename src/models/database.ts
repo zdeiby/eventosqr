@@ -109,6 +109,7 @@ const loadSQL = async (setDb, fetchUsers) => {
           id_usuario INTEGER PRIMARY KEY,
           cedula TEXT NOT NULL,
           contrasena TEXT NOT NULL,
+          rol TEXT NOT NULL,
           estado TEXT NOT NULL
         );
       `);
@@ -124,7 +125,8 @@ const loadSQL = async (setDb, fetchUsers) => {
           hora_inicio_evento TEXT,
           fecha_fin_evento TEXT,
           hora_fin_evento TEXT,
-          cupos_totales INTEGER
+          cupos_totales INTEGER,
+          proyecto TEXT
         );
       `);
 
