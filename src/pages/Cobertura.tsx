@@ -1362,7 +1362,7 @@ const localDate = () => localDateTime().slice(0, 10); // YYYY-MM-DD
                style={{
                   '--background': '#e1740eff',
                   '--color': 'white' // color del texto
-                }}>Actualizar datos y enviar registro asistentes</IonButton>
+                }}>Actualizar datos y/o enviar registro de asistentes</IonButton>
 
 
                   {/* Modal de escaneo QR */}
